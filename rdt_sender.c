@@ -34,6 +34,23 @@ int start_position=0;
 
 tcp_packet *file_packet_buffer[PACKET_BUFFER_SIZE];
 
+void resend_multiple_packets(int startIndex, int windowSize)
+{
+    for (int i = 0; i < windowSize; i += 1)
+    {
+        if ((startIndex + i) > PACKET_BUFFER_SIZE)
+        {
+            break;
+        }
+        tcp_packet *packetToSend = file_packet_buffer[startIndex + i];
+        if (sendto(sockfd, packetToSend, TCP_HDR_SIZE + get_data_size(packetToSend), 0,
+                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
+        {
+            error("sendto");
+        }
+    }
+}
+
 void resend_packets(int sig)
 {
     if (sig == SIGALRM)
@@ -153,6 +170,11 @@ int main(int argc, char **argv)
 
     VLOG(INFO,"length of the file %d",sizeof(file_packet_buffer));
         //Wait for ACK
+
+    // File smaller than window size
+    if(window_size>pos){
+        window_size=pos;
+    }
 
     for (int i=0;i<window_size;i++){
 
