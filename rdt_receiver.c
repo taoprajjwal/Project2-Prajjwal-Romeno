@@ -21,6 +21,7 @@
  */
 tcp_packet *recvpkt;
 tcp_packet *sndpkt;
+int expected_seq_no=0; //next expected sequence no. For task 1 we will discard packets if this is not matched
 
 int main(int argc, char **argv) {
     int sockfd; /* socket */
@@ -95,6 +96,7 @@ int main(int argc, char **argv) {
         }
         recvpkt = (tcp_packet *) buffer;
         assert(get_data_size(recvpkt) <= DATA_SIZE);
+        
         if ( recvpkt->hdr.data_size == 0) {
             //VLOG(INFO, "End Of File has been reached");
             fclose(fp);
@@ -106,10 +108,14 @@ int main(int argc, char **argv) {
         gettimeofday(&tp, NULL);
         VLOG(DEBUG, "%lu, %d, %d", tp.tv_sec, recvpkt->hdr.data_size, recvpkt->hdr.seqno);
 
-        fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
-        fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
-        sndpkt = make_packet(0);
-        sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
+
+        if (expected_seq_no==recvpkt->hdr.seqno){
+            fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
+            fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
+            sndpkt = make_packet(0);
+            expected_seq_no=recvpkt->hdr.seqno + recvpkt->hdr.data_size;
+            }
+        sndpkt->hdr.ackno = expected_seq_no;
         sndpkt->hdr.ctr_flags = ACK;
         if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0, 
                 (struct sockaddr *) &clientaddr, clientlen) < 0) {
