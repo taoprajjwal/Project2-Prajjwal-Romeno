@@ -29,11 +29,27 @@ tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
 
-
-int start_position=0;
-int end_position=10;
+int start_position = 0;
+int end_position = 10;
 
 tcp_packet *file_packet_buffer[PACKET_BUFFER_SIZE];
+
+void resend_multiple_packets(int startIndex, int windowSize)
+{
+    for (int i = 0; i < windowSize; i += 1)
+    {
+        if ((startIndex + i) > PACKET_BUFFER_SIZE)
+        {
+            break;
+        }
+        tcp_packet *packetToSend = file_packet_buffer[startIndex + i];
+        if (sendto(sockfd, packetToSend, TCP_HDR_SIZE + get_data_size(packetToSend), 0,
+                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
+        {
+            error("sendto");
+        }
+    }
+}
 
 void resend_packets(int sig)
 {
@@ -86,7 +102,6 @@ int main(int argc, char **argv)
     char buffer[DATA_SIZE];
     FILE *fp;
 
-
     /* check command line arguments */
     if (argc != 4)
     {
@@ -127,7 +142,7 @@ int main(int argc, char **argv)
 
     init_timer(RETRY, resend_packets);
     next_seqno = 0;
-    int pos=0;
+    int pos = 0;
     while (1)
     {
         len = fread(buffer, 1, DATA_SIZE, fp);
@@ -135,7 +150,7 @@ int main(int argc, char **argv)
         {
             VLOG(INFO, "End Of File has been reached");
             sndpkt = make_packet(0);
-            file_packet_buffer[pos]=sndpkt;
+            file_packet_buffer[pos] = sndpkt;
             break;
         }
         send_base = next_seqno;
@@ -143,45 +158,44 @@ int main(int argc, char **argv)
         sndpkt = make_packet(len);
         memcpy(sndpkt->data, buffer, len);
         sndpkt->hdr.seqno = send_base;
-        file_packet_buffer[pos]=sndpkt;
-        pos+=1;
-        
+        file_packet_buffer[pos] = sndpkt;
+        pos += 1;
     }
-        //Wait for ACK
-        do
-        {
+    //Wait for ACK
+    do
+    {
 
-            VLOG(DEBUG, "Sending packet %d to %s",
-                 send_base, inet_ntoa(serveraddr.sin_addr));
-            /*
+        VLOG(DEBUG, "Sending packet %d to %s",
+             send_base, inet_ntoa(serveraddr.sin_addr));
+        /*
              * If the sendto is called for the first time, the system will
              * will assign a random port number so that server can send its
              * response to the src port.
              */
-            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
-            {
-                error("sendto");
-            }
+        if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
+                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
+        {
+            error("sendto");
+        }
 
-            start_timer();
-            //ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
-            //struct sockaddr *src_addr, socklen_t *addrlen);
+        start_timer();
+        //ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
+        //struct sockaddr *src_addr, socklen_t *addrlen);
 
-            if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
-                         (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
-            {
-                error("recvfrom");
-            }
+        if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
+                     (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
+        {
+            error("recvfrom");
+        }
 
-            recvpkt = (tcp_packet *)buffer;
-            printf("%d \n", get_data_size(recvpkt));
-            assert(get_data_size(recvpkt) <= DATA_SIZE);
-            stop_timer();
-            /*resend pack if dont recv ack */
-        } while (recvpkt->hdr.ackno != next_seqno);
+        recvpkt = (tcp_packet *)buffer;
+        printf("%d \n", get_data_size(recvpkt));
+        assert(get_data_size(recvpkt) <= DATA_SIZE);
+        stop_timer();
+        /*resend pack if dont recv ack */
+    } while (recvpkt->hdr.ackno != next_seqno);
 
-        free(sndpkt);
+    free(sndpkt);
 
     return 0;
 }
