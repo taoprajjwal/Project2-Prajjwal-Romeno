@@ -16,10 +16,11 @@
 
 #define STDIN_FD 0
 #define RETRY 120 //milli second
+#define PACKET_BUFFER_SIZE 9999
 
 int next_seqno = 0;
 int send_base = 0;
-int window_size = 1;
+int window_size = 10;
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
@@ -28,11 +29,11 @@ tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
 
-int packets_buffer_size=9999;
-tcp_packet *file_packet_buffer[packets_buffer_size];
 
 int start_position=0;
-int end_position=window_size;
+int end_position=10;
+
+tcp_packet *file_packet_buffer[PACKET_BUFFER_SIZE];
 
 void resend_packets(int sig)
 {
@@ -126,7 +127,7 @@ int main(int argc, char **argv)
 
     init_timer(RETRY, resend_packets);
     next_seqno = 0;
-    int pos=0
+    int pos=0;
     while (1)
     {
         len = fread(buffer, 1, DATA_SIZE, fp);
