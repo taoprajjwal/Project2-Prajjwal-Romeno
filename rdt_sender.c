@@ -28,21 +28,26 @@ struct itimerval timer;
 tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
-FILE *fp;
-
+char *filePathVal;
 int start_position = 0;
 
 tcp_packet *file_packet_buffer[PACKET_BUFFER_SIZE];
 
 tcp_packet *get_packet_at_position(int index)
 {
-    index += 1; // because index 0 would be actually 1 in the multiplication below and so on
-    int seeker = fseek(fp, index * DATA_SIZE, SEEK_SET);
+    FILE *fp;
+    fp = fopen(filePathVal, "r");
     char buffer[DATA_SIZE];
-    int len = fread(buffer, 1, DATA_SIZE, fp);
+    index += 1; // because index 0 would be actually 1 in the multiplication below and so on
+    int len = 0;
+    if (fseek(fp, index * DATA_SIZE, SEEK_SET) > 0)
+    {
+        len = fread(buffer, 1, DATA_SIZE, fp);
+    }
     tcp_packet *resultPacket = make_packet(len);
     memcpy(resultPacket->data, buffer, len);
     resultPacket->hdr.seqno = index * DATA_SIZE;
+    fclose(fp);
     return resultPacket;
 }
 
@@ -122,7 +127,7 @@ int main(int argc, char **argv)
     int next_seqno;
     char *hostname;
     char buffer[DATA_SIZE];
-
+    FILE *fp;
     int last_ack;
 
     /* check command line arguments */
@@ -138,6 +143,8 @@ int main(int argc, char **argv)
     {
         error(argv[3]);
     }
+
+    filePathVal = argv[3];
 
     /* socket: create the socket */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
