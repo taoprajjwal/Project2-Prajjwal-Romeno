@@ -173,6 +173,7 @@ int main(int argc, char **argv)
 
     // File smaller than window size
     if(window_size>pos){
+        VLOG(DEBUG,"Lenght of file smaller than window size");
         window_size=pos;
     }
 
@@ -206,39 +207,42 @@ int main(int argc, char **argv)
             }
 
             recvpkt = (tcp_packet *)buffer;
-            printf("%d \n", get_data_size(recvpkt));
+            printf("%d \n", recvpkt->hdr.ackno);
             assert(get_data_size(recvpkt) <= DATA_SIZE);
 
-            if(recvpkt->hdr.ackno==file_packet_buffer[start_position+1]->hdr.seqno){
-                stop_timer();
-                
-                if (file_packet_buffer[start_position+window_size]->hdr.data_size==0){
-                    packet_end=1;
-                    if(recvpkt->hdr.ackno==last_ack){
+            //Last data packet acked. Send termination packet
+            if ((packet_end==1) && (recvpkt->hdr.ackno==last_ack)){
                         if (sendto(sockfd, file_packet_buffer[start_position+window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position+window_size]), 0,
                         (const struct sockaddr *)&serveraddr, serverlen) < 0)
                         {
                             error("sendto");
                         }
                         completed=1;
-                    }
+            }
+
+            else if(recvpkt->hdr.ackno==file_packet_buffer[start_position+1]->hdr.seqno){
+                stop_timer();
                 
+                if (file_packet_buffer[start_position+window_size]->hdr.data_size==0){
+                    packet_end=1;
+                    VLOG(DEBUG,"Packet end reached. Last packet to be acked %d",last_ack);
+                    
                 }
                 else{
-                    start_position+=1;
+                    VLOG(DEBUG, "Sending packet %d to %s",
+                 file_packet_buffer[start_position+window_size]->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
                     if (sendto(sockfd, file_packet_buffer[start_position+window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position+window_size]), 0,
                         (const struct sockaddr *)&serveraddr, serverlen) < 0)
                         {
                             error("sendto");
                         }
                     start_timer();
+                    start_position+=1;
                 }
-
             }
-            /*resend pack if dont recv ack */
-        } while (completed==0);
 
-        free(sndpkt);
+
+        } while (completed==0);
 
     return 0;
 }
