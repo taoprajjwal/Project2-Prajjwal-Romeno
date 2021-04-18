@@ -15,7 +15,7 @@
 #include "common.h"
 
 #define STDIN_FD 0
-#define RETRY 120 //milli second
+#define RETRY 1200 //milli second
 #define PACKET_BUFFER_SIZE 100000
 
 int next_seqno = 0;
@@ -34,19 +34,27 @@ int start_position=0;
 
 tcp_packet *file_packet_buffer[PACKET_BUFFER_SIZE];
 
-void resend_multiple_packets(int startIndex, int windowSize)
+void resend_multiple_packets(int sig)
 {
-    for (int i = 0; i < windowSize; i += 1)
-    {
-        if ((startIndex + i) > PACKET_BUFFER_SIZE)
+
+    if(sig==SIGALRM){
+
+        VLOG(INFO,"Timeout")
+        for (int i = 0; i < window_size; i += 1)
         {
-            break;
-        }
-        tcp_packet *packetToSend = file_packet_buffer[startIndex + i];
-        if (sendto(sockfd, packetToSend, TCP_HDR_SIZE + get_data_size(packetToSend), 0,
-                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
-        {
-            error("sendto");
+            tcp_packet *packetToSend = file_packet_buffer[start_position + i];
+
+            if (packetToSend->hdr.data_size==0){
+                break;
+            }
+            
+            VLOG(DEBUG, "Sending packet %d: resend",
+                 packetToSend->hdr.seqno);
+            if (sendto(sockfd, packetToSend, TCP_HDR_SIZE + get_data_size(packetToSend), 0,
+                    (const struct sockaddr *)&serveraddr, serverlen) < 0)
+            {
+                error("sendto");
+            }
         }
     }
 }
@@ -84,7 +92,7 @@ void stop_timer()
  */
 void init_timer(int delay, void (*sig_handler)(int))
 {
-    signal(SIGALRM, resend_packets);
+    signal(SIGALRM, resend_multiple_packets);
     timer.it_interval.tv_sec = delay / 1000; // sets an interval of the timer
     timer.it_interval.tv_usec = (delay % 1000) * 1000;
     timer.it_value.tv_sec = delay / 1000; // sets an initial value
@@ -220,7 +228,7 @@ int main(int argc, char **argv)
                         completed=1;
             }
 
-            else if(recvpkt->hdr.ackno==file_packet_buffer[start_position+1]->hdr.seqno){
+            else if(recvpkt->hdr.ackno>=file_packet_buffer[start_position+1]->hdr.seqno){
                 stop_timer();
                 
                 if (file_packet_buffer[start_position+window_size]->hdr.data_size==0){
