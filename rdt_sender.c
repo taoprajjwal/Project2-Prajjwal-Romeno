@@ -28,30 +28,44 @@ struct itimerval timer;
 tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
+FILE *fp;
 
-
-int start_position=0;
+int start_position = 0;
 
 tcp_packet *file_packet_buffer[PACKET_BUFFER_SIZE];
+
+tcp_packet *get_packet_at_position(int index)
+{
+    index += 1; // because index 0 would be actually 1 in the multiplication below and so on
+    int seeker = fseek(fp, index * DATA_SIZE, SEEK_SET);
+    char buffer[DATA_SIZE];
+    int len = fread(buffer, 1, DATA_SIZE, fp);
+    tcp_packet *resultPacket = make_packet(len);
+    memcpy(resultPacket->data, buffer, len);
+    resultPacket->hdr.seqno = index * DATA_SIZE;
+    return resultPacket;
+}
 
 void resend_multiple_packets(int sig)
 {
 
-    if(sig==SIGALRM){
+    if (sig == SIGALRM)
+    {
 
-        VLOG(INFO,"Timeout")
+        VLOG(INFO, "Timeout")
         for (int i = 0; i < window_size; i += 1)
         {
             tcp_packet *packetToSend = file_packet_buffer[start_position + i];
 
-            if (packetToSend->hdr.data_size==0){
+            if (packetToSend->hdr.data_size == 0)
+            {
                 break;
             }
-            
+
             VLOG(DEBUG, "Sending packet %d: resend",
                  packetToSend->hdr.seqno);
             if (sendto(sockfd, packetToSend, TCP_HDR_SIZE + get_data_size(packetToSend), 0,
-                    (const struct sockaddr *)&serveraddr, serverlen) < 0)
+                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
             {
                 error("sendto");
             }
@@ -108,8 +122,6 @@ int main(int argc, char **argv)
     int next_seqno;
     char *hostname;
     char buffer[DATA_SIZE];
-    FILE *fp;
-
 
     int last_ack;
 
@@ -153,17 +165,17 @@ int main(int argc, char **argv)
 
     init_timer(RETRY, resend_packets);
     next_seqno = 0;
-    int pos=0;
+    int pos = 0;
     while (1)
     {
         len = fread(buffer, 1, DATA_SIZE, fp);
         if (len <= 0)
         {
 
-            last_ack=next_seqno;
+            last_ack = next_seqno;
             VLOG(INFO, "End Of File has been reached");
             sndpkt = make_packet(0);
-            file_packet_buffer[pos]=sndpkt;
+            file_packet_buffer[pos] = sndpkt;
             break;
         }
         send_base = next_seqno;
@@ -171,86 +183,89 @@ int main(int argc, char **argv)
         sndpkt = make_packet(len);
         memcpy(sndpkt->data, buffer, len);
         sndpkt->hdr.seqno = send_base;
-        file_packet_buffer[pos]=sndpkt;
-        pos+=1;
-        
+        file_packet_buffer[pos] = sndpkt;
+        pos += 1;
     }
 
-    VLOG(INFO,"length of the file %d",sizeof(file_packet_buffer));
-        //Wait for ACK
+    VLOG(INFO, "length of the file %d", sizeof(file_packet_buffer));
+    //Wait for ACK
 
     // File smaller than window size
-    if(window_size>pos){
-        VLOG(DEBUG,"Lenght of file smaller than window size");
-        window_size=pos;
+    if (window_size > pos)
+    {
+        VLOG(DEBUG, "Lenght of file smaller than window size");
+        window_size = pos;
     }
 
-    for (int i=0;i<window_size;i++){
+    for (int i = 0; i < window_size; i++)
+    {
 
-         VLOG(DEBUG, "Sending packet %d to %s",
-                 file_packet_buffer[i]->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
-            /*
+        VLOG(DEBUG, "Sending packet %d to %s",
+             file_packet_buffer[i]->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
+        /*
              * If the sendto is called for the first time, the system will
              * will assign a random port number so that server can send its
              * response to the src port.
              */
-            if (sendto(sockfd, file_packet_buffer[i], TCP_HDR_SIZE + get_data_size(file_packet_buffer[i]), 0,
+        if (sendto(sockfd, file_packet_buffer[i], TCP_HDR_SIZE + get_data_size(file_packet_buffer[i]), 0,
+                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
+        {
+            error("sendto");
+        }
+    }
+    start_timer();
+    int packet_end = 0;
+    int completed = 0;
+    do
+    {
+        //ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
+        //struct sockaddr *src_addr, socklen_t *addrlen);
+
+        if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
+                     (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
+        {
+            error("recvfrom");
+        }
+
+        recvpkt = (tcp_packet *)buffer;
+        printf("%d \n", recvpkt->hdr.ackno);
+        assert(get_data_size(recvpkt) <= DATA_SIZE);
+
+        //Last data packet acked. Send termination packet
+        if ((packet_end == 1) && (recvpkt->hdr.ackno == last_ack))
+        {
+            if (sendto(sockfd, file_packet_buffer[start_position + window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position + window_size]), 0,
                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
             {
                 error("sendto");
             }
-    }
-    start_timer();
-    int packet_end=0;
-    int completed=0;
-    do
+            completed = 1;
+        }
+
+        else if (recvpkt->hdr.ackno >= file_packet_buffer[start_position + 1]->hdr.seqno)
         {
-            //ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
-            //struct sockaddr *src_addr, socklen_t *addrlen);
+            stop_timer();
 
-            if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
-                         (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
+            if (file_packet_buffer[start_position + window_size]->hdr.data_size == 0)
             {
-                error("recvfrom");
+                packet_end = 1;
+                VLOG(DEBUG, "Packet end reached. Last packet to be acked %d", last_ack);
             }
-
-            recvpkt = (tcp_packet *)buffer;
-            printf("%d \n", recvpkt->hdr.ackno);
-            assert(get_data_size(recvpkt) <= DATA_SIZE);
-
-            //Last data packet acked. Send termination packet
-            if ((packet_end==1) && (recvpkt->hdr.ackno==last_ack)){
-                        if (sendto(sockfd, file_packet_buffer[start_position+window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position+window_size]), 0,
-                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
-                        {
-                            error("sendto");
-                        }
-                        completed=1;
-            }
-
-            else if(recvpkt->hdr.ackno>=file_packet_buffer[start_position+1]->hdr.seqno){
-                stop_timer();
-                
-                if (file_packet_buffer[start_position+window_size]->hdr.data_size==0){
-                    packet_end=1;
-                    VLOG(DEBUG,"Packet end reached. Last packet to be acked %d",last_ack);
-                    
+            else
+            {
+                VLOG(DEBUG, "Sending packet %d to %s",
+                     file_packet_buffer[start_position + window_size]->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
+                if (sendto(sockfd, file_packet_buffer[start_position + window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position + window_size]), 0,
+                           (const struct sockaddr *)&serveraddr, serverlen) < 0)
+                {
+                    error("sendto");
                 }
-                else{
-                    VLOG(DEBUG, "Sending packet %d to %s",
-                 file_packet_buffer[start_position+window_size]->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
-                    if (sendto(sockfd, file_packet_buffer[start_position+window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position+window_size]), 0,
-                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
-                        {
-                            error("sendto");
-                        }
-                    start_timer();
-                    start_position+=1;
-                }
+                start_timer();
+                start_position += 1;
             }
+        }
 
-
-        } while (completed==0);
+    } while (completed == 0);
 
     return 0;
 }
