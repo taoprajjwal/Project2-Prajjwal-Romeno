@@ -40,13 +40,13 @@ tcp_packet *get_packet_at_position(int index)
     char buffer[DATA_SIZE];
     index += 1; // because index 0 would be actually 1 in the multiplication below and so on
     int len = 0;
-    if (fseek(fp, index * DATA_SIZE, SEEK_SET) > 0)
+    if (fseek(fp, (index * DATA_SIZE - DATA_SIZE), SEEK_SET) >= 0)
     {
         len = fread(buffer, 1, DATA_SIZE, fp);
     }
     tcp_packet *resultPacket = make_packet(len);
     memcpy(resultPacket->data, buffer, len);
-    resultPacket->hdr.seqno = index * DATA_SIZE;
+    resultPacket->hdr.seqno = (index * DATA_SIZE - DATA_SIZE);
     fclose(fp);
     return resultPacket;
 }
