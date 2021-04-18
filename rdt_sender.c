@@ -31,8 +31,6 @@ sigset_t sigmask;
 char *filePathVal;
 int start_position = 0;
 
-tcp_packet *file_packet_buffer[PACKET_BUFFER_SIZE];
-
 tcp_packet *get_packet_at_position(int index)
 {
     FILE *fp;
@@ -60,7 +58,7 @@ void resend_multiple_packets(int sig)
         VLOG(INFO, "Timeout")
         for (int i = 0; i < window_size; i += 1)
         {
-            tcp_packet *packetToSend = file_packet_buffer[start_position + i];
+            tcp_packet *packetToSend = get_packet_at_position(start_position + i);
 
             if (packetToSend->hdr.data_size == 0)
             {
@@ -175,26 +173,19 @@ int main(int argc, char **argv)
     int pos = 0;
     while (1)
     {
-        len = fread(buffer, 1, DATA_SIZE, fp);
+        sndpkt = get_packet_at_position(pos);
+        len = sndpkt->hdr.data_size;
         if (len <= 0)
         {
-
             last_ack = next_seqno;
             VLOG(INFO, "End Of File has been reached");
             sndpkt = make_packet(0);
-            file_packet_buffer[pos] = sndpkt;
             break;
         }
         send_base = next_seqno;
         next_seqno = send_base + len;
-        sndpkt = make_packet(len);
-        memcpy(sndpkt->data, buffer, len);
-        sndpkt->hdr.seqno = send_base;
-        file_packet_buffer[pos] = sndpkt;
         pos += 1;
     }
-
-    VLOG(INFO, "length of the file %d", sizeof(file_packet_buffer));
     //Wait for ACK
 
     // File smaller than window size
@@ -208,13 +199,14 @@ int main(int argc, char **argv)
     {
 
         VLOG(DEBUG, "Sending packet %d to %s",
-             file_packet_buffer[i]->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
+             get_packet_at_position(i)->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
         /*
              * If the sendto is called for the first time, the system will
              * will assign a random port number so that server can send its
              * response to the src port.
              */
-        if (sendto(sockfd, file_packet_buffer[i], TCP_HDR_SIZE + get_data_size(file_packet_buffer[i]), 0,
+        tcp_packet *tmp_pkt = get_packet_at_position(i);
+        if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
                    (const struct sockaddr *)&serveraddr, serverlen) < 0)
         {
             error("sendto");
@@ -241,7 +233,8 @@ int main(int argc, char **argv)
         //Last data packet acked. Send termination packet
         if ((packet_end == 1) && (recvpkt->hdr.ackno == last_ack))
         {
-            if (sendto(sockfd, file_packet_buffer[start_position + window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position + window_size]), 0,
+            tcp_packet *tmp_pkt = get_packet_at_position(start_position + window_size);
+            if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
             {
                 error("sendto");
@@ -249,11 +242,11 @@ int main(int argc, char **argv)
             completed = 1;
         }
 
-        else if (recvpkt->hdr.ackno >= file_packet_buffer[start_position + 1]->hdr.seqno)
+        else if (recvpkt->hdr.ackno >= get_packet_at_position(start_position + 1)->hdr.seqno)
         {
             stop_timer();
-
-            if (file_packet_buffer[start_position + window_size]->hdr.data_size == 0)
+            tcp_packet *tmp_pkt = get_packet_at_position(start_position + window_size);
+            if (tmp_pkt->hdr.data_size == 0)
             {
                 packet_end = 1;
                 VLOG(DEBUG, "Packet end reached. Last packet to be acked %d", last_ack);
@@ -261,8 +254,8 @@ int main(int argc, char **argv)
             else
             {
                 VLOG(DEBUG, "Sending packet %d to %s",
-                     file_packet_buffer[start_position + window_size]->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
-                if (sendto(sockfd, file_packet_buffer[start_position + window_size], TCP_HDR_SIZE + get_data_size(file_packet_buffer[start_position + window_size]), 0,
+                     tmp_pkt->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
+                if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
                            (const struct sockaddr *)&serveraddr, serverlen) < 0)
                 {
                     error("sendto");
