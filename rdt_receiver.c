@@ -38,12 +38,12 @@ void initPacketBuffer()
     }
 }
 
-int checkIfSeqNumberInPacketBuffer(int seqNumber)
+int checkIfHigherSeqNumberInPacketBuffer(int seqNumber)
 {
     int foundIndex = -1;
     for (int i = 0; i < BUFFER_PACKET_ARRAY_SIZE; i++)
     {
-        if (bufferedPackets[i]->hdr.seqno == seqNumber)
+        if (bufferedPackets[i]->hdr.seqno > seqNumber)
         {
             foundIndex = i;
             break;
@@ -190,13 +190,11 @@ int main(int argc, char **argv)
             expected_seq_no = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
         }
 
-        int next_seq_no = expected_seq_no + 1;
         int checkIndex = -1;
-        while (checkIndex = checkIfSeqNumberInPacketBuffer(next_seq_no) != -1)
+        while (checkIndex = checkIfHigherSeqNumberInPacketBuffer(expected_seq_no) != -1)
         {
             fseek(fp, bufferedPackets[checkIndex]->hdr.seqno, SEEK_SET);
             fwrite(bufferedPackets[checkIndex]->data, 1, bufferedPackets[checkIndex]->hdr.data_size, fp);
-            next_seq_no += 1;
             expected_seq_no += bufferedPackets[checkIndex]->hdr.seqno + bufferedPackets[checkIndex]->hdr.data_size;
         }
 
