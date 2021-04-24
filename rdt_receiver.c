@@ -168,9 +168,6 @@ int main(int argc, char **argv)
         recvpkt = (tcp_packet *)buffer;
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
-        tryToAddToPacketBuffer(recvpkt);
-        cleanPacketBuffer();
-
         if (recvpkt->hdr.data_size == 0)
         {
             //VLOG(INFO, "End Of File has been reached");
@@ -188,6 +185,13 @@ int main(int argc, char **argv)
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
             expected_seq_no = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
+        }
+        else
+        {
+            VLOG(DEBUG, "NON EXPECTED PACKET SEQ NUMBER RECIEVED");
+            //if not expected seq number then add to buffer
+            tryToAddToPacketBuffer(recvpkt);
+            cleanPacketBuffer();
         }
 
         int checkIndex = -1;
