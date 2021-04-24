@@ -189,6 +189,17 @@ int main(int argc, char **argv)
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
             expected_seq_no = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
         }
+
+        int next_seq_no = expected_seq_no + 1;
+        int checkIndex = -1;
+        while (checkIndex = checkIfSeqNumberInPacketBuffer(next_seq_no) != -1)
+        {
+            fseek(fp, bufferedPackets[checkIndex]->hdr.seqno, SEEK_SET);
+            fwrite(bufferedPackets[checkIndex]->data, 1, bufferedPackets[checkIndex]->hdr.data_size, fp);
+            next_seq_no += 1;
+            expected_seq_no += bufferedPackets[checkIndex]->hdr.seqno + bufferedPackets[checkIndex]->hdr.data_size;
+        }
+
         sndpkt = make_packet(0);
         sndpkt->hdr.ackno = expected_seq_no;
         sndpkt->hdr.ctr_flags = ACK;
