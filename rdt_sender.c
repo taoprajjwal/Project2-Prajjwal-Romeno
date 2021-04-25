@@ -30,6 +30,18 @@ tcp_packet *recvpkt;
 sigset_t sigmask;
 char *filePathVal;
 int start_position = 0;
+int last_packet_sent;
+
+int duplicate_ack=0;
+int duplicate_ack_counter=0;
+
+int ssthresh=64;
+
+int window_size_counter=0;
+
+
+struct timeval tp;
+FILE *out_file;
 
 tcp_packet *get_packet_at_position(int index)
 {
@@ -56,7 +68,20 @@ void resend_multiple_packets(int sig)
     {
 
         VLOG(INFO, "Timeout")
-        for (int i = 0; i < window_size; i += 1)
+
+        if (window_size<ssthresh){
+            if ((window_size/2)>2){
+                ssthresh=window_size/2;
+            }
+            else{
+                ssthresh=2;
+            }
+        }
+
+        window_size=1;
+
+
+        for (int i=start_position;i<start_position+window_size;i++)
         {
             tcp_packet *packetToSend = get_packet_at_position(start_position + i);
 
@@ -168,6 +193,8 @@ int main(int argc, char **argv)
 
     //Stop and wait protocol
 
+    out_file=fopen("CWND.csv","w");
+
     init_timer(RETRY, resend_packets);
     next_seqno = 0;
     int pos = 0;
@@ -178,7 +205,7 @@ int main(int argc, char **argv)
         if (len <= 0)
         {
             last_ack = next_seqno;
-            VLOG(INFO, "End Of File has been reached");
+            VLOG(INFO, "End Of   File has been reached");
             sndpkt = make_packet(0);
             break;
         }
@@ -211,7 +238,10 @@ int main(int argc, char **argv)
         {
             error("sendto");
         }
+
+        last_packet_sent=i;
     }
+
     start_timer();
     int packet_end = 0;
     int completed = 0;
@@ -230,42 +260,81 @@ int main(int argc, char **argv)
         printf("%d \n", recvpkt->hdr.ackno);
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
-        //Last data packet acked. Send termination packet
-        if ((packet_end == 1) && (recvpkt->hdr.ackno == last_ack))
-        {
-            tcp_packet *tmp_pkt = get_packet_at_position(start_position + window_size);
-            if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
-                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
-            {
-                error("sendto");
-            }
-            completed = 1;
+
+        if (recvpkt->hdr.ackno==duplicate_ack){
+            duplicate_ack_counter++;
+        }
+        
+        if (duplicate_ack_counter>=3){
+            VLOG(DEBUG,"Triple ack for %d recieved",duplicate_ack)
+            resend_multiple_packets(SIGALRM);
         }
 
-        else if (recvpkt->hdr.ackno >= get_packet_at_position(start_position + 1)->hdr.seqno)
-        {
-            stop_timer();
-            tcp_packet *tmp_pkt = get_packet_at_position(start_position + window_size);
-            if (tmp_pkt->hdr.data_size == 0)
-            {
-                packet_end = 1;
-                VLOG(DEBUG, "Packet end reached. Last packet to be acked %d", last_ack);
+        else{
+            
+            //Congestion Avoidance
+            if (window_size>ssthresh){
+                //Increase CWND by 1 for every CWNDth ACK
+                if (window_size_counter>window_size){
+                    window_size++;
+                    window_size_counter=0;
+                }
+                else{
+                    window_size_counter++;
+                }
             }
-            else
+
+            //Slow start
+            else{
+                window_size++;
+            }
+
+            gettimeofday(&tp,NULL);
+            fprintf(out_file,"%lu, %lu, %d \n",tp.tv_sec,tp.tv_usec,window_size);
+
+            //Last data packet acked. Send termination packet
+            if ((packet_end == 1) && (recvpkt->hdr.ackno == last_ack))
             {
-                VLOG(DEBUG, "Sending packet %d to %s",
-                     tmp_pkt->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
+                tcp_packet *tmp_pkt = get_packet_at_position(pos*DATA_SIZE);
                 if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
-                           (const struct sockaddr *)&serveraddr, serverlen) < 0)
+                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
                 {
                     error("sendto");
                 }
-                start_timer();
-                start_position += 1;
+                completed = 1;
             }
-        }
 
-    } while (completed == 0);
+            else if (recvpkt->hdr.ackno > duplicate_ack)
+            {
+                duplicate_ack_counter=0;
+                duplicate_ack=recvpkt->hdr.ackno;
+                stop_timer();
+                start_position=(int) ceil(recvpkt->hdr.ackno / DATA_SIZE);                
 
+                for (int i=last_packet_sent+1;i<start_position+window_size;i++){
+                    tcp_packet *tmp_pkt = get_packet_at_position(i);
+                    if (tmp_pkt->hdr.data_size == 0)
+                    {
+                        packet_end = 1;
+                        VLOG(DEBUG, "Packet end reached. Last packet to be acked %d", last_ack);
+                    }
+                    else
+                    {
+                        VLOG(DEBUG, "Sending packet %d to %s",
+                            tmp_pkt->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
+                        if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
+                                (const struct sockaddr *)&serveraddr, serverlen) < 0)
+                        {
+                            error("sendto");
+                        }
+                        start_timer();
+                        last_packet_sent =i;
+                    }
+                }
+            }
+        } 
+    }while (completed == 0);
+
+    close(out_file);
     return 0;
 }
