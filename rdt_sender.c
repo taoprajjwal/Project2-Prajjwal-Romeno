@@ -20,7 +20,7 @@
 
 int next_seqno = 0;
 int send_base = 0;
-int window_size = 10;
+int window_size = 1;
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
@@ -39,6 +39,8 @@ int ssthresh=64;
 
 int window_size_counter=0;
 
+int packet_end = 0;
+int completed = 0;
 
 struct timeval tp;
 FILE *out_file;
@@ -66,7 +68,6 @@ void resend_multiple_packets(int sig)
 
     if (sig == SIGALRM)
     {
-
         VLOG(INFO, "Timeout")
 
         if (window_size<ssthresh){
@@ -83,15 +84,20 @@ void resend_multiple_packets(int sig)
 
         for (int i=start_position;i<start_position+window_size;i++)
         {
-            tcp_packet *packetToSend = get_packet_at_position(start_position + i);
+            tcp_packet *packetToSend = get_packet_at_position(i);
 
             if (packetToSend->hdr.data_size == 0)
             {
-                break;
+
+                VLOG(DEBUG, "Trying to send the last packet after timeout");
+                if (packet_end==0){
+                    break;
+                }
             }
 
             VLOG(DEBUG, "Sending packet %d: resend",
                  packetToSend->hdr.seqno);
+
             if (sendto(sockfd, packetToSend, TCP_HDR_SIZE + get_data_size(packetToSend), 0,
                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
             {
@@ -243,8 +249,7 @@ int main(int argc, char **argv)
     }
 
     start_timer();
-    int packet_end = 0;
-    int completed = 0;
+
     do
     {
         //ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
@@ -267,6 +272,7 @@ int main(int argc, char **argv)
         
         if (duplicate_ack_counter>=3){
             VLOG(DEBUG,"Triple ack for %d recieved",duplicate_ack)
+            duplicate_ack_counter=0;
             resend_multiple_packets(SIGALRM);
         }
 
@@ -309,10 +315,14 @@ int main(int argc, char **argv)
                 duplicate_ack_counter=0;
                 duplicate_ack=recvpkt->hdr.ackno;
                 stop_timer();
-                start_position=(int) ceil(recvpkt->hdr.ackno / DATA_SIZE);                
+
+                start_position=(int) ceil(recvpkt->hdr.ackno / DATA_SIZE);
+
+                VLOG(DEBUG," Start position :%d, Last packet sent : %d ",start_position);
 
                 for (int i=last_packet_sent+1;i<start_position+window_size;i++){
                     tcp_packet *tmp_pkt = get_packet_at_position(i);
+
                     if (tmp_pkt->hdr.data_size == 0)
                     {
                         packet_end = 1;
