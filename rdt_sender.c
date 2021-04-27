@@ -103,6 +103,8 @@ void resend_multiple_packets(int sig)
             {
                 error("sendto");
             }
+
+            last_packet_sent=i;
         }
     }
 }
@@ -262,18 +264,21 @@ int main(int argc, char **argv)
         }
 
         recvpkt = (tcp_packet *)buffer;
-        printf("%d \n", recvpkt->hdr.ackno);
+        printf("%d %d \n", recvpkt->hdr.ackno,duplicate_ack);
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
 
-        if (recvpkt->hdr.ackno==duplicate_ack){
-            duplicate_ack_counter++;
-        }
         
         if (duplicate_ack_counter>=3){
             VLOG(DEBUG,"Triple ack for %d recieved",duplicate_ack)
             duplicate_ack_counter=0;
             resend_multiple_packets(SIGALRM);
+        }
+
+        
+        
+        if (recvpkt->hdr.ackno==duplicate_ack){
+            duplicate_ack_counter++;
         }
 
         else{
@@ -310,7 +315,8 @@ int main(int argc, char **argv)
                 completed = 1;
             }
 
-            else if (recvpkt->hdr.ackno > duplicate_ack)
+            
+            else if (recvpkt->hdr.ackno >= duplicate_ack)
             {
                 duplicate_ack_counter=0;
                 duplicate_ack=recvpkt->hdr.ackno;
@@ -318,9 +324,9 @@ int main(int argc, char **argv)
 
                 start_position=(int) ceil(recvpkt->hdr.ackno / DATA_SIZE);
 
-                VLOG(DEBUG," Start position :%d, Last packet sent : %d ",start_position);
+                VLOG(DEBUG," Start position :%d, Last packet sent : %d, Window size: %d ",start_position,last_packet_sent,window_size);
 
-                for (int i=last_packet_sent+1;i<start_position+window_size;i++){
+                for (int i=last_packet_sent+1;i<=start_position+window_size;i++){
                     tcp_packet *tmp_pkt = get_packet_at_position(i);
 
                     if (tmp_pkt->hdr.data_size == 0)
