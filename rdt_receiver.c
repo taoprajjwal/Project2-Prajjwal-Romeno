@@ -25,14 +25,9 @@ tcp_packet *sndpkt;
 int expected_seq_no = 0; //next expected sequence no. For task 1 we will discard packets if this is not matched
 
 tcp_packet *bufferedPackets[BUFFER_PACKET_ARRAY_SIZE];
-int bufferPackets = 0;
 
 void initPacketBuffer()
 {
-    if (!bufferPackets)
-    {
-        return;
-    }
     tcp_packet *tmp_packet = make_packet(0);
     //memcpy(sndpkt->data, buffer, len);
     for (int i = 0; i < BUFFER_PACKET_ARRAY_SIZE; i++)
@@ -45,10 +40,7 @@ void initPacketBuffer()
 
 int checkIfHigherSeqNumberInPacketBuffer(int seqNumber)
 {
-    if (!bufferPackets)
-    {
-        return -1;
-    }
+
     int foundIndex = -1;
     for (int i = 0; i < BUFFER_PACKET_ARRAY_SIZE; i++)
     {
@@ -63,10 +55,6 @@ int checkIfHigherSeqNumberInPacketBuffer(int seqNumber)
 
 int tryToAddToPacketBuffer(tcp_packet *tmpPacket)
 {
-    if (!bufferPackets)
-    {
-        return -1;
-    }
     tcp_packet *newPacket;
     char b[DATA_SIZE];
     int insertIndex = -1;
@@ -90,10 +78,7 @@ int tryToAddToPacketBuffer(tcp_packet *tmpPacket)
 
 void cleanPacketBuffer()
 {
-    if (!bufferPackets)
-    {
-        return;
-    }
+
     VLOG(DEBUG, "start clean buf");
     for (int i = 0; i < BUFFER_PACKET_ARRAY_SIZE; i++)
     {
@@ -117,7 +102,7 @@ int main(int argc, char **argv)
     FILE *fp;
     char buffer[MSS_SIZE];
     struct timeval tp;
-    //initPacketBuffer();
+    initPacketBuffer();
     /* 
      * check command line arguments 
      */
@@ -207,17 +192,17 @@ int main(int argc, char **argv)
         {
             VLOG(DEBUG, "NON EXPECTED PACKET SEQ NUMBER RECIEVED");
             //if not expected seq number then add to buffer
-            // tryToAddToPacketBuffer(recvpkt);
-            //cleanPacketBuffer();
+            tryToAddToPacketBuffer(recvpkt);
+            cleanPacketBuffer();
         }
 
         int checkIndex = -1;
-        // while (checkIndex = checkIfHigherSeqNumberInPacketBuffer(expected_seq_no) != -1)
-        // {
-        //     fseek(fp, bufferedPackets[checkIndex]->hdr.seqno, SEEK_SET);
-        //     fwrite(bufferedPackets[checkIndex]->data, 1, bufferedPackets[checkIndex]->hdr.data_size, fp);
-        //     expected_seq_no += bufferedPackets[checkIndex]->hdr.seqno + bufferedPackets[checkIndex]->hdr.data_size;
-        // }
+        while (checkIndex = checkIfHigherSeqNumberInPacketBuffer(expected_seq_no) != -1)
+        {
+            fseek(fp, bufferedPackets[checkIndex]->hdr.seqno, SEEK_SET);
+            fwrite(bufferedPackets[checkIndex]->data, 1, bufferedPackets[checkIndex]->hdr.data_size, fp);
+            expected_seq_no += bufferedPackets[checkIndex]->hdr.seqno + bufferedPackets[checkIndex]->hdr.data_size;
+        }
 
         sndpkt = make_packet(0);
         sndpkt->hdr.ackno = expected_seq_no;
@@ -227,7 +212,7 @@ int main(int argc, char **argv)
         {
             error("ERROR in sendto");
         }
-        //cleanPacketBuffer();
+        cleanPacketBuffer();
     }
 
     return 0;
