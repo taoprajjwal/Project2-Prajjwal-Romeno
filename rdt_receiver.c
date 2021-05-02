@@ -220,6 +220,9 @@ int main(int argc, char **argv)
         sndpkt = make_packet(0);
         sndpkt->hdr.ackno = expected_seq_no;
         sndpkt->hdr.ctr_flags = ACK;
+
+        VLOG(DEBUG, "Sending ACK for %d", sndpkt->hdr.ackno);
+
         if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
                    (struct sockaddr *)&clientaddr, clientlen) < 0)
         {
