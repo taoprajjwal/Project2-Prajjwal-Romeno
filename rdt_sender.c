@@ -10,13 +10,17 @@
 #include <sys/time.h>
 #include <time.h>
 #include <assert.h>
-//test
 #include "packet.h"
 #include "common.h"
 
 #define STDIN_FD 0
-#define RETRY 1200 //milli second
 #define PACKET_BUFFER_SIZE 100000
+
+int RETRY =1200; //milli second
+float estRTT=1200;
+float sampleRTT=0;
+float devRTT=0;
+
 
 int next_seqno = 0;
 int send_base = 0;
@@ -40,6 +44,7 @@ int packet_end = 0;
 int completed = 0;
 
 
+int retrasmit_flag=0; //flag for whether a packet was re-transmitted. Used for updating timeout using RTT.
 int timeout_ack=0; //triple ack led to the last timeout. Will ignore future triple acks.
 
 
@@ -119,24 +124,27 @@ void resend_multiple_packets(int sig)
             }
 
             last_packet_sent=i;
+            retrasmit_flag=1;
+
         }
     
     }
 }
 
-void resend_packets(int sig)
-{
-    if (sig == SIGALRM)
-    {
-        //Resend all packets range between
-        //sendBase and nextSeqNum
-        VLOG(INFO, "Timout happend");
-        if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
-        {
-            error("sendto");
-        }
-    }
+void update_timer(long long int time){
+
+    gettimeofday(&tp,NULL);
+    sampleRTT= (float) ((tp.tv_sec*1000LL + (tp.tv_usec/1000)) - time);
+
+    estRTT=((1.0 - 0.125) * estRTT) + (0.125 * sampleRTT);
+    devRTT = ((1.0 - 0.25) * devRTT) + (0.25 * fabs(sampleRTT - estRTT)); // Absolute value represented by fabs()
+
+    RETRY= (int) (estRTT+(4*devRTT));
+
+    VLOG(DEBUG,"Current timeout %d",RETRY);
+
+    init_timer(RETRY,resend_multiple_packets); 
+
 }
 
 void start_timer()
@@ -218,7 +226,7 @@ int main(int argc, char **argv)
 
     out_file=fopen("CWND.csv","w");
 
-    init_timer(RETRY, resend_packets);
+    init_timer(RETRY, resend_multiple_packets);
     next_seqno = 0;
     int pos = 0;
     while (1)
@@ -283,10 +291,12 @@ int main(int argc, char **argv)
         printf("%d %d \n", recvpkt->hdr.ackno,duplicate_ack);
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
+        if (retrasmit_flag==0){
+            update_timer(recvpkt->hdr.time);
+
+        }
 
 
-        
-        
         if ((recvpkt->hdr.ackno==duplicate_ack) && (duplicate_ack!=last_ack)){
             duplicate_ack_counter++;
 
@@ -376,6 +386,7 @@ int main(int argc, char **argv)
                         }
                         start_timer();
                         last_packet_sent =i;
+                        retrasmit_flag=0;
                     }
                 }
             }

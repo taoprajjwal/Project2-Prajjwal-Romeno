@@ -220,6 +220,7 @@ int main(int argc, char **argv)
         sndpkt = make_packet(0);
         sndpkt->hdr.ackno = expected_seq_no;
         sndpkt->hdr.ctr_flags = ACK;
+        sndpkt->hdr.time=recvpkt->hdr.time;
 
         VLOG(DEBUG, "Sending ACK for %d", sndpkt->hdr.ackno);
 
