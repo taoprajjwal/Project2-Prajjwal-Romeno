@@ -29,18 +29,19 @@ tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
 char *filePathVal;
-int start_position = 0;
+int start_position = -1;
 int last_packet_sent;
 
 int duplicate_ack=0;
 int duplicate_ack_counter=0;
-
 int ssthresh=64;
-
 int window_size_counter=0;
-
 int packet_end = 0;
 int completed = 0;
+
+
+int timeout_ack=0; //triple ack led to the last timeout. Will ignore future triple acks.
+
 
 struct timeval tp;
 FILE *out_file;
@@ -68,21 +69,34 @@ void resend_multiple_packets(int sig)
 
     if (sig == SIGALRM)
     {
-        VLOG(INFO, "Timeout")
-
-        if (window_size<ssthresh){
-            if ((window_size/2)>2){
-                ssthresh=window_size/2;
+            if ( (int) (window_size/2) > 2){
+                ssthresh= (int) window_size/2;
             }
+
             else{
                 ssthresh=2;
             }
-        }
 
+
+        VLOG(DEBUG,"Before timeout window_size : %d, After timeout ssthresh: %d",window_size,ssthresh);
+
+        window_size_counter=0;
         window_size=1;
 
 
-        for (int i=start_position;i<start_position+window_size;i++)
+        //clear the recv buffer in to prevent duplicate timeout triggers
+
+        /*
+        char *clear_buffer[MSS_SIZE];
+        int size;
+        while(size=recvfrom(sockfd, clear_buffer, MSS_SIZE, MSG_DONTWAIT,
+                    (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0){
+
+        } */
+
+    
+
+        for (int i=start_position+1;i<=start_position+window_size;i++)
         {
             tcp_packet *packetToSend = get_packet_at_position(i);
 
@@ -106,6 +120,7 @@ void resend_multiple_packets(int sig)
 
             last_packet_sent=i;
         }
+    
     }
 }
 
@@ -258,27 +273,32 @@ int main(int argc, char **argv)
         //struct sockaddr *src_addr, socklen_t *addrlen);
 
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
-                     (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
+                    (struct sockaddr *)&serveraddr, (socklen_t *)&serverlen) < 0)
         {
             error("recvfrom");
         }
+
 
         recvpkt = (tcp_packet *)buffer;
         printf("%d %d \n", recvpkt->hdr.ackno,duplicate_ack);
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
 
-        
-        if (duplicate_ack_counter>=3){
-            VLOG(DEBUG,"Triple ack for %d recieved",duplicate_ack)
-            duplicate_ack_counter=0;
-            resend_multiple_packets(SIGALRM);
-        }
 
         
         
-        if (recvpkt->hdr.ackno==duplicate_ack){
+        if ((recvpkt->hdr.ackno==duplicate_ack) && (duplicate_ack!=last_ack)){
             duplicate_ack_counter++;
+
+            if (duplicate_ack_counter>=3){
+
+                if (duplicate_ack!=timeout_ack){
+                    VLOG(DEBUG,"Triple ack for %d recieved",duplicate_ack)
+                    duplicate_ack_counter=0;
+                    timeout_ack=duplicate_ack;
+                    resend_multiple_packets(SIGALRM);
+                }
+            }
         }
 
         else{
@@ -307,10 +327,15 @@ int main(int argc, char **argv)
             if ((packet_end == 1) && (recvpkt->hdr.ackno == last_ack))
             {
                 tcp_packet *tmp_pkt = get_packet_at_position(pos*DATA_SIZE);
-                if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
-                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
-                {
-                    error("sendto");
+
+                //Send multiple times to ensure receiver gets the last packet and closes connection.
+                for (int j=0;j<10;j++){
+                    if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
+                            (const struct sockaddr *)&serveraddr, serverlen) < 0)
+                    {
+                        error("sendto");
+                    }
+
                 }
                 completed = 1;
             }
@@ -322,11 +347,17 @@ int main(int argc, char **argv)
                 duplicate_ack=recvpkt->hdr.ackno;
                 stop_timer();
 
-                start_position=(int) ceil(recvpkt->hdr.ackno / DATA_SIZE);
+                start_position=ceil(recvpkt->hdr.ackno / DATA_SIZE)-1;
 
-                VLOG(DEBUG," Start position :%d, Last packet sent : %d, Window size: %d ",start_position,last_packet_sent,window_size);
+                VLOG(DEBUG," Start position :%d, Last packet sent : %d, Window size: %d, Sstresh: %d ",start_position,last_packet_sent,window_size,ssthresh);
+
+
+                if (last_packet_sent<start_position){
+                    last_packet_sent=start_position;
+                }
 
                 for (int i=last_packet_sent+1;i<=start_position+window_size;i++){
+
                     tcp_packet *tmp_pkt = get_packet_at_position(i);
 
                     if (tmp_pkt->hdr.data_size == 0)
