@@ -12,7 +12,7 @@
 #include "common.h"
 #include "packet.h"
 
-#define BUFFER_PACKET_ARRAY_SIZE 5
+#define BUFFER_PACKET_ARRAY_SIZE 32
 
 /*
  * You ar required to change the implementation to support
@@ -44,7 +44,6 @@ int checkIfNextSeqNumberInPacketBuffer(int next_seq_no)
     int foundIndex = -1;
     for (int i = 0; i < BUFFER_PACKET_ARRAY_SIZE; i++)
     {
-        VLOG(DEBUG, "\t buffer item %d sequence number %d", i, bufferedPackets[i]->hdr.seqno);
         if (bufferedPackets[i]->hdr.seqno == next_seq_no)
         {
             foundIndex = i;
@@ -57,6 +56,10 @@ int checkIfNextSeqNumberInPacketBuffer(int next_seq_no)
 
 int tryToAddToPacketBuffer(tcp_packet *tmpPacket)
 {
+    if (checkIfNextSeqNumberInPacketBuffer(tmpPacket->hdr.seqno) != -1)
+    {
+        return -1;
+    }
     VLOG(DEBUG, "Trying to add to packet buffer with seq number %d", tmpPacket->hdr.seqno);
     tcp_packet *newPacket;
     char b[DATA_SIZE];
@@ -81,16 +84,16 @@ int tryToAddToPacketBuffer(tcp_packet *tmpPacket)
 
 void cleanPacketBuffer()
 {
-    VLOG(DEBUG, "start clean buf");
+    //VLOG(DEBUG, "start clean buf");
     for (int i = 0; i < BUFFER_PACKET_ARRAY_SIZE; i++)
     {
         if (bufferedPackets[i]->hdr.seqno < expected_seq_no)
         {
             bufferedPackets[i]->hdr.seqno = -1;
         }
-        VLOG(DEBUG, "buffered seq - %d", bufferedPackets[i]->hdr.seqno);
+        //VLOG(DEBUG, "buffered seq - %d", bufferedPackets[i]->hdr.seqno);
     }
-    VLOG(DEBUG, "end clean buf");
+    //VLOG(DEBUG, "end clean buf");
 }
 
 int main(int argc, char **argv)
@@ -194,16 +197,16 @@ int main(int argc, char **argv)
             checkIndex = checkIfNextSeqNumberInPacketBuffer(expected_seq_no);
             while (checkIndex != -1) //change to check if next seq number in pcket buf not just higher we need only the next
             {
-                VLOG(DEBUG, "checkIndex value is %d, buffer packet seq number is %d", checkIndex, bufferedPackets[checkIndex]->hdr.seqno);
+                //VLOG(DEBUG, "checkIndex value is %d, buffer packet seq number is %d", checkIndex, bufferedPackets[checkIndex]->hdr.seqno);
                 if (bufferedPackets[checkIndex]->hdr.seqno == -1)
                 {
-                    VLOG(DEBUG, "breaking - checkIndex value is %d, buffer packet seq number is %d", checkIndex, bufferedPackets[checkIndex]->hdr.seqno);
+                    //VLOG(DEBUG, "breaking - checkIndex value is %d, buffer packet seq number is %d", checkIndex, bufferedPackets[checkIndex]->hdr.seqno);
                     break;
                 }
 
                 fseek(fp, bufferedPackets[checkIndex]->hdr.seqno, SEEK_SET);
                 fwrite(bufferedPackets[checkIndex]->data, 1, bufferedPackets[checkIndex]->hdr.data_size, fp);
-                VLOG(DEBUG, "data from seq number %d added to file", expected_seq_no);
+                VLOG(DEBUG, "Packet from receiver buffer with seq number %d added to file", expected_seq_no);
 
                 expected_seq_no = bufferedPackets[checkIndex]->hdr.seqno + bufferedPackets[checkIndex]->hdr.data_size;
                 bufferedPackets[checkIndex]->hdr.seqno = -1;
@@ -212,7 +215,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            VLOG(DEBUG, "NON EXPECTED PACKET SEQ NUMBER RECIEVED");
+            VLOG(DEBUG, "Non expected packet number recieved.");
             //if not expected seq number then add to buffer
             tryToAddToPacketBuffer(recvpkt);
         }
@@ -220,7 +223,7 @@ int main(int argc, char **argv)
         sndpkt = make_packet(0);
         sndpkt->hdr.ackno = expected_seq_no;
         sndpkt->hdr.ctr_flags = ACK;
-        sndpkt->hdr.time=recvpkt->hdr.time;
+        sndpkt->hdr.time = recvpkt->hdr.time;
 
         VLOG(DEBUG, "Sending ACK for %d", sndpkt->hdr.ackno);
 

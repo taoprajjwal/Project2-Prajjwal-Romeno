@@ -13,7 +13,6 @@ Where IP-Address, PortNo and FileName are replaced with the relevant information
 In order to run the receiver:
 
 ```
-./rdt_sender IP-Address PortNo FileName
 ./rdt_receiver PortNo RecieverFileName
 ```
 
