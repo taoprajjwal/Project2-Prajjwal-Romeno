@@ -18,6 +18,9 @@ In order to run the receiver:
 
 Where PortNo is the same as the PortNo in the sender and RecieverFileName is the file name you want to save the file as.
 
+
+Throughput and Congestion window graphs can be seen [here](https://github.com/taoprajjwal/Project2-Prajjwal-Romeno/tree/main/Graphs)
+
 ## Implementation Details
 
 
