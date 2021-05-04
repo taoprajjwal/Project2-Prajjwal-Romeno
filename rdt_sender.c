@@ -50,6 +50,7 @@ int timeout_ack=0; //triple ack led to the last timeout. Will ignore future trip
 
 struct timeval tp;
 FILE *out_file;
+FILE *timeout_file;
 
 tcp_packet *get_packet_at_position(int index)
 {
@@ -83,8 +84,6 @@ void resend_multiple_packets(int sig)
             }
 
 
-        VLOG(DEBUG,"Before timeout window_size : %d, After timeout ssthresh: %d",window_size,ssthresh);
-
         window_size_counter=0;
         window_size=1;
 
@@ -108,7 +107,6 @@ void resend_multiple_packets(int sig)
             if (packetToSend->hdr.data_size == 0)
             {
 
-                VLOG(DEBUG, "Trying to send the last packet after timeout");
                 if (packet_end==0){
                     break;
                 }
@@ -141,7 +139,7 @@ void update_timer(long long int time){
 
     RETRY= (int) (estRTT+(4*devRTT));
 
-    VLOG(DEBUG,"Current timeout %d",RETRY);
+    fprintf(timeout_file,"%lu, %lu, %d \n",tp.tv_sec,tp.tv_usec,RETRY);
 
     init_timer(RETRY,resend_multiple_packets);
 
@@ -226,6 +224,8 @@ int main(int argc, char **argv)
 
     out_file=fopen("CWND.csv","w");
 
+    timeout_file=fopen("Timeout.csv","w");
+
     init_timer(RETRY, resend_multiple_packets);
     next_seqno = 0;
     int pos = 0;
@@ -236,7 +236,6 @@ int main(int argc, char **argv)
         if (len <= 0)
         {
             last_ack = next_seqno;
-            VLOG(INFO, "End Of   File has been reached");
             sndpkt = make_packet(0);
             break;
         }
@@ -288,7 +287,6 @@ int main(int argc, char **argv)
 
 
         recvpkt = (tcp_packet *)buffer;
-        printf("%d %d \n", recvpkt->hdr.ackno,duplicate_ack);
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
         
@@ -316,6 +314,9 @@ int main(int argc, char **argv)
                 if (window_size_counter>window_size){
                     window_size++;
                     window_size_counter=0;
+                    
+                    gettimeofday(&tp,NULL);
+                    fprintf(out_file,"%lu, %lu, %d \n",tp.tv_sec,tp.tv_usec,window_size);
                 }
                 else{
                     window_size_counter++;
@@ -325,10 +326,11 @@ int main(int argc, char **argv)
             //Slow start
             else{
                 window_size++;
+                gettimeofday(&tp,NULL);
+                fprintf(out_file,"%lu, %lu, %d \n",tp.tv_sec,tp.tv_usec,window_size);
             }
 
-            gettimeofday(&tp,NULL);
-            fprintf(out_file,"%lu, %lu, %d \n",tp.tv_sec,tp.tv_usec,window_size);
+            
 
             //Last data packet acked. Send termination packet
             if ((packet_end == 1) && (recvpkt->hdr.ackno == last_ack))
@@ -355,8 +357,6 @@ int main(int argc, char **argv)
 
                 start_position=ceil(recvpkt->hdr.ackno / DATA_SIZE)-1;
 
-                VLOG(DEBUG," Start position :%d, Last packet sent : %d, Window size: %d, Sstresh: %d ",start_position,last_packet_sent,window_size,ssthresh);
-
 
                 if (last_packet_sent<start_position){
                     last_packet_sent=start_position;
@@ -369,14 +369,13 @@ int main(int argc, char **argv)
                     if (tmp_pkt->hdr.data_size == 0)
                     {
                         packet_end = 1;
-                        VLOG(DEBUG, "Packet end reached. Last packet to be acked %d", last_ack);
                     }
                     else
                     {
                         if (retrasmit_flag==0){
                         update_timer(recvpkt->hdr.time);
                         }
-                        
+
                         stop_timer();
                         VLOG(DEBUG, "Sending packet %d to %s",
                             tmp_pkt->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
