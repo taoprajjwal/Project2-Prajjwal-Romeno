@@ -143,6 +143,8 @@ void update_timer(long long int time){
 
     VLOG(DEBUG,"Current timeout %d",RETRY);
 
+    init_timer(RETRY,resend_multiple_packets);
+
 }
 
 void start_timer()
@@ -290,11 +292,6 @@ int main(int argc, char **argv)
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
         
-        if (retrasmit_flag==0){
-            update_timer(recvpkt->hdr.time);
-
-        }
-        
 
 
         if ((recvpkt->hdr.ackno==duplicate_ack) && (duplicate_ack!=last_ack)){
@@ -355,7 +352,6 @@ int main(int argc, char **argv)
             {
                 duplicate_ack_counter=0;
                 duplicate_ack=recvpkt->hdr.ackno;
-                stop_timer();
 
                 start_position=ceil(recvpkt->hdr.ackno / DATA_SIZE)-1;
 
@@ -377,6 +373,11 @@ int main(int argc, char **argv)
                     }
                     else
                     {
+                        if (retrasmit_flag==0){
+                        update_timer(recvpkt->hdr.time);
+                        }
+                        
+                        stop_timer();
                         VLOG(DEBUG, "Sending packet %d to %s",
                             tmp_pkt->hdr.seqno, inet_ntoa(serveraddr.sin_addr));
                         if (sendto(sockfd, tmp_pkt, TCP_HDR_SIZE + get_data_size(tmp_pkt), 0,
