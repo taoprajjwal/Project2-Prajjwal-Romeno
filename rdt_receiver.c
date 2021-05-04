@@ -40,14 +40,14 @@ void initPacketBuffer()
 
 int checkIfNextSeqNumberInPacketBuffer(int next_seq_no)
 {
-    VLOG(DEBUG, "Start checking if next seq numbber - %d - in buffer", next_seq_no);
+    //VLOG(DEBUG, "Start checking if next seq numbber - %d - in buffer", next_seq_no);
     int foundIndex = -1;
     for (int i = 0; i < BUFFER_PACKET_ARRAY_SIZE; i++)
     {
         if (bufferedPackets[i]->hdr.seqno == next_seq_no)
         {
             foundIndex = i;
-            VLOG(DEBUG, "\t FOUND newer packet %d sequence number %d", i, bufferedPackets[i]->hdr.seqno);
+            //VLOG(DEBUG, "\t FOUND newer packet %d sequence number %d", i, bufferedPackets[i]->hdr.seqno);
             return i;
         }
     }
@@ -60,7 +60,7 @@ int tryToAddToPacketBuffer(tcp_packet *tmpPacket)
     {
         return -1;
     }
-    VLOG(DEBUG, "Trying to add to packet buffer with seq number %d", tmpPacket->hdr.seqno);
+    //VLOG(DEBUG, "Trying to add to packet buffer with seq number %d", tmpPacket->hdr.seqno);
     tcp_packet *newPacket;
     char b[DATA_SIZE];
     int insertIndex = -1;
@@ -158,7 +158,7 @@ int main(int argc, char **argv)
     /* 
      * main loop: wait for a datagram, then echo it
      */
-    VLOG(DEBUG, "epoch time, bytes received, sequence number");
+    //VLOG(DEBUG, "epoch time, bytes received, sequence number");
 
     clientlen = sizeof(clientaddr);
     while (1)
@@ -206,7 +206,7 @@ int main(int argc, char **argv)
 
                 fseek(fp, bufferedPackets[checkIndex]->hdr.seqno, SEEK_SET);
                 fwrite(bufferedPackets[checkIndex]->data, 1, bufferedPackets[checkIndex]->hdr.data_size, fp);
-                VLOG(DEBUG, "Packet from receiver buffer with seq number %d added to file", expected_seq_no);
+                //VLOG(DEBUG, "Packet from receiver buffer with seq number %d added to file", expected_seq_no);
 
                 expected_seq_no = bufferedPackets[checkIndex]->hdr.seqno + bufferedPackets[checkIndex]->hdr.data_size;
                 bufferedPackets[checkIndex]->hdr.seqno = -1;
@@ -215,7 +215,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            VLOG(DEBUG, "Non expected packet number recieved.");
+            //VLOG(DEBUG, "Non expected packet number recieved.");
             //if not expected seq number then add to buffer
             tryToAddToPacketBuffer(recvpkt);
         }
@@ -225,7 +225,7 @@ int main(int argc, char **argv)
         sndpkt->hdr.ctr_flags = ACK;
         sndpkt->hdr.time = recvpkt->hdr.time;
 
-        VLOG(DEBUG, "Sending ACK for %d", sndpkt->hdr.ackno);
+        //VLOG(DEBUG, "Sending ACK for %d", sndpkt->hdr.ackno);
 
         if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
                    (struct sockaddr *)&clientaddr, clientlen) < 0)
