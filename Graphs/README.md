@@ -20,7 +20,7 @@ Command used: mm-loss uplink 0.1 (on the receiver terminal)
 
 ### Channel traces
 
-![image](https://user-images.githubusercontent.com/19713194/117072855-254a3880-ad42-11eb-8078-334db7491345.png)
+![image](att.png)
 
 Command used: mm-link channel_traces/ATT-LTE-driving-2016.up channel_traces/ATT-LTE-driving-2016.down
 
