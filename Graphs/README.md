@@ -6,15 +6,11 @@ We tested the TCP in various environments of MahiMahi and created throughput and
 
 We measure throughputs by the number of packets sent per second, and use wireshark to generate these plots. In wireshark, we set the filter for the interface that is created by mahimahi and trace all packets in that interface. The resulting plots are given below:
 
-### 10% packet Loss 
+### 10% packet Loss
 
 ![image](https://user-images.githubusercontent.com/19713194/117072682-e2886080-ad41-11eb-86b7-6788921647e3.png)
 
-
-
-
 Command used: mm-loss downlink 0.1 (on the receiver terminal)
-
 
 ### 10% ACK loss
 
@@ -28,3 +24,20 @@ Command used: mm-loss uplink 0.1 (on the receiver terminal)
 
 Command used: mm-link channel_traces/ATT-LTE-driving-2016.up channel_traces/ATT-LTE-driving-2016.down
 
+---
+
+![image](cellularGold.png)
+
+Cellular Gold
+
+---
+
+![image](highwayGold.png)
+
+Highway Gold
+
+---
+
+![image](rapidGold.png)
+
+Rapid Gold
